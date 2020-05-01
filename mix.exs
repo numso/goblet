@@ -7,7 +7,11 @@ defmodule Goblet.MixProject do
       version: "0.1.0",
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      package: package(),
+      description: "Something to help you consume that sweet, sweet absinthe.",
+      homepage_url: "https://github.com/numso/goblet",
+      source_url: "https://github.com/numso/goblet"
     ]
   end
 
@@ -21,8 +25,17 @@ defmodule Goblet.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:ex_doc, ">= 0.0.0", only: :dev},
       {:editor_diagnostics, "~> 0.1.0"},
       {:jason, "~> 1.0"}
+    ]
+  end
+
+  defp package do
+    [
+      maintainers: ["Dallin Osmun"],
+      licenses: ["MIT"],
+      links: %{github: "https://github.com/numso/goblet"}
     ]
   end
 end
