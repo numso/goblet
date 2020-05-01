@@ -1,0 +1,4 @@
+%{
+  "editor_diagnostics": {:hex, :editor_diagnostics, "0.1.0", "d618620808e45dc2f67c92986765b0ee1330f18cae941f775ef0d9b1fe609159", [:mix], [], "hexpm", "14faeac949390121b183b54f97feda08a62dd5f13991c55e56182e0ae7632471"},
+  "jason": {:hex, :jason, "1.2.0", "10043418c42d2493d0ee212d3fddd25d7ffe484380afad769a0a38795938e448", [:mix], [{:decimal, "~> 1.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm", "116747dbe057794c3a3e4e143b7c8390b29f634e16c78a7f59ba75bfa6852e7f"},
+}
