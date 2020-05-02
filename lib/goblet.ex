@@ -74,7 +74,7 @@ defmodule Goblet do
     {str, vars} = parse_gql(expr, query_type, %{types: types, file: file, line: 0, name: ""})
 
     var_str =
-      case Enum.map(vars, fn {key, type} -> "$#{key}: #{type}" end) do
+      case Enum.map(vars || [], fn {key, type} -> "$#{key}: #{type}" end) do
         [] -> ""
         vars -> "(#{Enum.join(vars, ", ")})"
       end
@@ -206,7 +206,7 @@ defmodule Goblet do
   end
 
   defp unwrap_type(%{"ofType" => nil} = type), do: type
-  defp unwrap_type(%{"ofType" => type}), do: type
+  defp unwrap_type(%{"ofType" => type}), do: unwrap_type(type)
 
   defp error(message, ctx) do
     :ok = EditorDiagnostics.report(:error, message, ctx.file, ctx.line, "goblet")

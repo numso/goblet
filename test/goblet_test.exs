@@ -1,6 +1,6 @@
 defmodule GobletTest do
   use ExUnit.Case
-  # doctest Goblet
+  alias Mix.Task.Compiler.Diagnostic
 
   defmodule SimpleGoblet do
     use Goblet, from: "./test/schema.json"
@@ -69,8 +69,14 @@ defmodule GobletTest do
 
   test "reports errors to EditorDiagnostics" do
     assert EditorDiagnostics.collect() == [
-             {:error, "Could not find field whoops on type RootQueryType",
-              "/Users/numso/code/goblet/test/goblet_test.exs", 66}
+             %Diagnostic{
+               compiler_name: "goblet",
+               details: nil,
+               file: Path.absname("./test/goblet_test.exs"),
+               message: "Could not find field whoops on type RootQueryType",
+               position: 66,
+               severity: :error
+             }
            ]
   end
 
@@ -145,7 +151,7 @@ defmodule GobletTest do
     assert Complex.more_interesting() == %{
              "operationName" => "MoreInteresting",
              "query" =>
-               "query MoreInteresting {ages withArgs(a: hi, b: hello) thing {name} things {name} requiredThing {name} requiredThings {name} requiredThingsAgain {name} doublyRequiredThings {name}}",
+               "query MoreInteresting {ages withArgs(a: \"hi\", b: \"hello\") thing {name} things {name} requiredThing {name} requiredThings {name} requiredThingsAgain {name} doublyRequiredThings {name}}",
              "variables" => %{}
            }
   end
