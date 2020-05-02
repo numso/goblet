@@ -14,13 +14,22 @@ defmodule Goblet do
         schema = unquote(schema |> Macro.escape())
         fn_name = name |> Macro.underscore() |> String.to_atom()
 
+        {str, vars} = Goblet.build(expr, schema, __CALLER__.file)
+
+        var_str =
+          case Enum.map(vars, fn {key, type} -> "$#{key}: #{type}" end) do
+            [] -> ""
+            vars -> "(#{Enum.join(vars, ", ")})"
+          end
+
+        query_str = "query #{name}#{var_str} {#{str}}"
+
         # TODO:: determine types of pinned variables and create a typespec here
         quote do
           def unquote(fn_name)(variables \\ %{}) do
             %{
               "operationName" => unquote(name),
-              "query" =>
-                "query #{unquote(name)} {#{unquote(Goblet.build(expr, schema, __CALLER__.file))}}",
+              "query" => unquote(query_str),
               "variables" => variables
             }
           end
@@ -45,77 +54,138 @@ defmodule Goblet do
   def build(expr, schema, file) do
     query_type = get_in(schema, ["queryType", "name"])
     types = Map.get(schema, "types")
-    parse_gql(expr, query_type, types, file)
+    parse_gql(expr, query_type, %{types: types, file: file, line: 0, name: ""})
   end
 
-  defp parse_gql({:__block__, _, args}, cur_type, types, file) do
-    Enum.map(args, &parse_gql(&1, cur_type, types, file)) |> Enum.join(" ")
+  defp parse_gql({:__block__, _, args}, cur_type, ctx) do
+    {strs, vars} = Enum.map(args, &parse_gql(&1, cur_type, ctx)) |> Enum.unzip()
+    {Enum.join(strs, " "), combine_vars(vars)}
   end
 
-  defp parse_gql({name, [line: line], rest}, cur_type, types, file) do
+  defp parse_gql({name, [line: line], rest}, cur_type, %{types: types} = ctx) do
     field_name = Atom.to_string(name)
+    ctx = %{ctx | line: line, name: "#{cur_type}.#{field_name}"}
 
     case Enum.find(types, &(&1["name"] == cur_type)) do
       nil ->
-        report({:error, "type #{cur_type} not found in the schema", file, line})
+        error("type #{cur_type} not found in the schema", ctx)
 
       type ->
         case Enum.find(type["fields"], &(&1["name"] == field_name)) do
           nil ->
-            report({:error, "Could not find field #{field_name} on type #{cur_type}", file, line})
+            error("Could not find field #{field_name} on type #{cur_type}", ctx)
 
           field ->
-            case {get_subfield_name(field["type"]), rest} do
-              {nil, [[do: _expr]]} ->
-                report({:error, "Did not expect to find a subquery on #{field_name}", file, line})
+            actual_type = unwrap_type(field["type"])
+            object_name = if actual_type["kind"] == "OBJECT", do: actual_type["name"]
 
-              {nil, [_variables, [do: _expr]]} ->
-                report({:error, "Did not expect to find a subquery on #{field_name}", file, line})
+            case {object_name, field["args"], rest} do
+              {nil, _, [[do: _expr]]} ->
+                error("Did not expect to find a subquery on #{ctx.name}", ctx)
 
-              {nil, [variables]} ->
-                "#{field_name}(#{parse_variables(variables)})"
+              {nil, _, [_variables, [do: _expr]]} ->
+                error("Did not expect to find a subquery on #{ctx.name}", ctx)
 
-              {nil, nil} ->
-                field_name
+              {nil, [], [_variables]} ->
+                error("#{ctx.name} does not accept any args", ctx)
 
-              {nil, _} ->
-                report({:error, "Not really sure what happened here...", file, line})
+              {nil, args, [variables]} ->
+                {str, vars} = parse_variables(variables, args, ctx)
+                {"#{field_name}(#{str})", vars}
 
-              {name, [variables, [do: expr]]} ->
-                "#{field_name}(#{parse_variables(variables)}) {#{
-                  parse_gql(expr, name, types, file)
-                }}"
+              {nil, _, nil} ->
+                {field_name, nil}
 
-              {name, [[do: expr]]} ->
-                "#{field_name} {#{parse_gql(expr, name, types, file)}}"
+              {nil, _, _} ->
+                error("Not really sure what happened here...", ctx)
 
-              {_, _} ->
-                report(
-                  {:error,
-                   "Expected a subquery on #{cur_type}.#{field_name}. Are you missing a do...end?",
-                   file, line}
-                )
+              {_, [], [_variables, [do: _expr]]} ->
+                error("#{ctx.name} does not accept any args", ctx)
+
+              {name, args, [variables, [do: expr]]} ->
+                {str, vars} = parse_variables(variables, args, ctx)
+                {str2, vars2} = parse_gql(expr, name, ctx)
+                {"#{field_name}(#{str}) {#{str2}}", combine_vars([vars, vars2])}
+
+              {name, _, [[do: expr]]} ->
+                {str, vars} = parse_gql(expr, name, ctx)
+                {"#{field_name} {#{str}}", vars}
+
+              {_, _, _} ->
+                error("Expected a subquery on #{ctx.name}. Are you missing a do...end?", ctx)
             end
         end
     end
   end
 
-  defp parse_variables(variables) do
-    # parse it correctly, strings should have quotes around them
-    # if the variable is pinned, put it in the vars array, check it's type, yadda yadda
-    # if it's a non-pinned variable, raise
-    Keyword.keys(variables)
-    |> Enum.map(fn key -> "#{Atom.to_string(key)}: #{Keyword.get(variables, key)}" end)
-    |> Enum.join(", ")
+  defp parse_variables(variables, args, ctx) do
+    {strs, vars} =
+      variables
+      |> Enum.map(fn {key, value} ->
+        key = Atom.to_string(key)
+
+        # Refactor this, unwrapping is the wrong thing to do here. We need to preserve LIST and NON_NULL
+        arg =
+          case Enum.find(args, &(&1["name"] == key)) do
+            %{"type" => type} -> unwrap_type(type)
+            _ -> nil
+          end
+
+        {key, value, arg}
+      end)
+      |> Enum.map(&parse_variable(&1, ctx))
+      |> Enum.unzip()
+
+    {Enum.join(strs, ", "), combine_vars(vars)}
   end
 
-  defp get_subfield_name(%{"kind" => "OBJECT", "name" => name}), do: name
-  defp get_subfield_name(%{"kind" => "LIST", "ofType" => type}), do: get_subfield_name(type)
-  defp get_subfield_name(%{"kind" => "NON_NULL", "ofType" => type}), do: get_subfield_name(type)
-  defp get_subfield_name(_), do: nil
+  defp parse_variable({key, _value, nil}, ctx) do
+    error("Unexpected variable #{key} on #{ctx.name}", ctx)
+  end
 
-  def report(diagnostic) do
+  defp parse_variable({key, value, %{"kind" => "SCALAR", "name" => "Int"}}, _)
+       when is_number(value) do
+    {"#{key}: #{value}", nil}
+  end
+
+  defp parse_variable({key, value, arg}, ctx) when is_number(value) do
+    error("Expected arg #{key} on #{ctx.name} to be a #{arg["name"]}", ctx)
+  end
+
+  defp parse_variable({key, value, %{"kind" => "SCALAR", "name" => "Boolean"}}, _)
+       when is_boolean(value) do
+    {"#{key}: #{value}", nil}
+  end
+
+  defp parse_variable({key, value, arg}, ctx) when is_boolean(value) do
+    error("Expected arg #{key} on #{ctx.name} to be a #{arg["name"]}", ctx)
+  end
+
+  defp parse_variable({key, value, %{"kind" => "SCALAR", "name" => name}}, _)
+       when is_binary(value) and name in ["String", "ID"] do
+    {"#{key}: \"#{value}\"", nil}
+  end
+
+  defp parse_variable({key, value, arg}, ctx) when is_binary(value) do
+    error("Expected arg #{key} on #{ctx.name} to be a #{arg["name"]}", ctx)
+  end
+
+  defp parse_variable({key, {:^, _, [{key2, _, _}]}, arg}, _) do
+    {"#{key}: $#{Atom.to_string(key2)}", [{key2, arg["name"]}]}
+  end
+
+  defp combine_vars(vars) do
+    # TODO:: Check for inconsistencies here
+    Enum.filter(vars, & &1)
+    |> List.flatten()
+  end
+
+  defp unwrap_type(%{"ofType" => nil} = type), do: type
+  defp unwrap_type(%{"ofType" => type}), do: type
+
+  defp error(message, ctx) do
+    diagnostic = {:error, message, ctx.file, ctx.line}
     :ok = EditorDiagnostics.report(diagnostic)
-    nil
+    {"", nil}
   end
 end
