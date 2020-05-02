@@ -13,23 +13,40 @@ defmodule Goblet do
       defmacro query(name, do: expr) do
         schema = unquote(schema |> Macro.escape())
         fn_name = name |> Macro.underscore() |> String.to_atom()
-
-        {str, vars} = Goblet.build(expr, schema, __CALLER__.file)
-
-        var_str =
-          case Enum.map(vars, fn {key, type} -> "$#{key}: #{type}" end) do
-            [] -> ""
-            vars -> "(#{Enum.join(vars, ", ")})"
-          end
-
-        query_str = "query #{name}#{var_str} {#{str}}"
+        {str, var_str} = Goblet.build(expr, schema, "queryType", __CALLER__.file)
+        body = "query #{name}#{var_str} {#{str}}"
 
         # TODO:: determine types of pinned variables and create a typespec here
         quote do
           def unquote(fn_name)(variables \\ %{}) do
             %{
               "operationName" => unquote(name),
-              "query" => unquote(query_str),
+              "query" => unquote(body),
+              "variables" => variables
+            }
+          end
+
+          if function_exported?(unquote(__MODULE__), :process, 2) do
+            def unquote(fn_name)(variables, ctx) do
+              apply(__MODULE__, unquote(fn_name), [variables])
+              |> unquote(__MODULE__).process(ctx)
+            end
+          end
+        end
+      end
+
+      defmacro mutation(name, do: expr) do
+        schema = unquote(schema |> Macro.escape())
+        fn_name = name |> Macro.underscore() |> String.to_atom()
+        {str, var_str} = Goblet.build(expr, schema, "mutationType", __CALLER__.file)
+        body = "mutation #{name}#{var_str} {#{str}}"
+
+        # TODO:: determine types of pinned variables and create a typespec here
+        quote do
+          def unquote(fn_name)(variables \\ %{}) do
+            %{
+              "operationName" => unquote(name),
+              "query" => unquote(body),
               "variables" => variables
             }
           end
@@ -51,10 +68,18 @@ defmodule Goblet do
     end
   end
 
-  def build(expr, schema, file) do
-    query_type = get_in(schema, ["queryType", "name"])
+  def build(expr, schema, query_or_mutation, file) do
+    query_type = get_in(schema, [query_or_mutation, "name"])
     types = Map.get(schema, "types")
-    parse_gql(expr, query_type, %{types: types, file: file, line: 0, name: ""})
+    {str, vars} = parse_gql(expr, query_type, %{types: types, file: file, line: 0, name: ""})
+
+    var_str =
+      case Enum.map(vars, fn {key, type} -> "$#{key}: #{type}" end) do
+        [] -> ""
+        vars -> "(#{Enum.join(vars, ", ")})"
+      end
+
+    {str, var_str}
   end
 
   defp parse_gql({:__block__, _, args}, cur_type, ctx) do
