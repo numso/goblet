@@ -1,6 +1,6 @@
 %{
   "earmark": {:hex, :earmark, "1.4.4", "4821b8d05cda507189d51f2caeef370cf1e18ca5d7dfb7d31e9cafe6688106a4", [:mix], [], "hexpm", "1f93aba7340574847c0f609da787f0d79efcab51b044bb6e242cae5aca9d264d"},
-  "editor_diagnostics": {:hex, :editor_diagnostics, "0.1.0", "d618620808e45dc2f67c92986765b0ee1330f18cae941f775ef0d9b1fe609159", [:mix], [], "hexpm", "14faeac949390121b183b54f97feda08a62dd5f13991c55e56182e0ae7632471"},
+  "editor_diagnostics": {:hex, :editor_diagnostics, "0.2.0", "0db4dd3f746bf00156990bdd1d2d03bb014cbec06c4e98de13450893ccd26f37", [:mix], [], "hexpm", "d251d05229f2e69676a5cbc3de1bf62a13f08292eb683d80be3d91932b8107be"},
   "ex_doc": {:hex, :ex_doc, "0.21.3", "857ec876b35a587c5d9148a2512e952e24c24345552259464b98bfbb883c7b42", [:mix], [{:earmark, "~> 1.4", [hex: :earmark, repo: "hexpm", optional: false]}, {:makeup_elixir, "~> 0.14", [hex: :makeup_elixir, repo: "hexpm", optional: false]}], "hexpm", "0db1ee8d1547ab4877c5b5dffc6604ef9454e189928d5ba8967d4a58a801f161"},
   "jason": {:hex, :jason, "1.2.0", "10043418c42d2493d0ee212d3fddd25d7ffe484380afad769a0a38795938e448", [:mix], [{:decimal, "~> 1.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm", "116747dbe057794c3a3e4e143b7c8390b29f634e16c78a7f59ba75bfa6852e7f"},
   "makeup": {:hex, :makeup, "1.0.1", "82f332e461dc6c79dbd82fbe2a9c10d48ed07146f0a478286e590c83c52010b5", [:mix], [{:nimble_parsec, "~> 0.5.0", [hex: :nimble_parsec, repo: "hexpm", optional: false]}], "hexpm", "49736fe5b66a08d8575bf5321d716bac5da20c8e6b97714fec2bcd6febcfa1f8"},

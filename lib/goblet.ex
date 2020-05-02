@@ -209,8 +209,7 @@ defmodule Goblet do
   defp unwrap_type(%{"ofType" => type}), do: type
 
   defp error(message, ctx) do
-    diagnostic = {:error, message, ctx.file, ctx.line}
-    :ok = EditorDiagnostics.report(diagnostic)
+    :ok = EditorDiagnostics.report(:error, message, ctx.file, ctx.line, "goblet")
     {"", nil}
   end
 end
