@@ -62,7 +62,7 @@ defmodule Goblet do
 
       defmacro __using__(_) do
         quote do
-          import unquote(__MODULE__), only: [query: 2]
+          import unquote(__MODULE__), only: [query: 2, mutation: 2]
         end
       end
     end

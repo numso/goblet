@@ -2,31 +2,11 @@ defmodule GobletTest do
   use ExUnit.Case
   alias Mix.Task.Compiler.Diagnostic
 
-  defmodule SimpleGoblet do
+  defmodule MyGoblet do
     use Goblet, from: "./test/schema.json"
   end
 
-  defmodule Simple do
-    use SimpleGoblet
-
-    query "Test" do
-      id
-    end
-  end
-
-  test "can build a simple query" do
-    assert Simple.test() == %{
-             "operationName" => "Test",
-             "query" => "query Test {id}",
-             "variables" => %{}
-           }
-  end
-
-  test "does not create test/2 if process is not defined" do
-    assert function_exported?(Simple, :test, 2) == false
-  end
-
-  defmodule SimpleGoblet2 do
+  defmodule MyGobletWithProcess do
     use Goblet, from: "./test/schema.json"
 
     def process(query, ctx) do
@@ -34,8 +14,28 @@ defmodule GobletTest do
     end
   end
 
-  defmodule Simple2 do
-    use SimpleGoblet2
+  defmodule Queries do
+    use MyGoblet
+
+    query "Test" do
+      id
+    end
+  end
+
+  test "can build a simple query" do
+    assert Queries.test() == %{
+             "operationName" => "Test",
+             "query" => "query Test {id}",
+             "variables" => %{}
+           }
+  end
+
+  test "does not create test/2 if process is not defined" do
+    assert function_exported?(Queries, :test, 2) == false
+  end
+
+  defmodule Queries2 do
+    use MyGobletWithProcess
 
     query "Test" do
       id
@@ -43,9 +43,9 @@ defmodule GobletTest do
   end
 
   test "can process a simple query" do
-    assert function_exported?(Simple2, :test, 2)
+    assert function_exported?(Queries2, :test, 2)
 
-    assert Simple2.test(%{}, "ctx") == %{
+    assert Queries2.test(%{}, "ctx") == %{
              query: %{
                "operationName" => "Test",
                "query" => "query Test {id}",
@@ -55,12 +55,8 @@ defmodule GobletTest do
            }
   end
 
-  defmodule SimpleGoblet3 do
-    use Goblet, from: "./test/schema.json"
-  end
-
-  defmodule Simple3 do
-    use SimpleGoblet3
+  defmodule Queries3 do
+    use MyGoblet
 
     query "Test" do
       whoops
@@ -71,21 +67,16 @@ defmodule GobletTest do
     assert EditorDiagnostics.collect() == [
              %Diagnostic{
                compiler_name: "goblet",
-               details: nil,
                file: Path.absname("./test/goblet_test.exs"),
                message: "Could not find field whoops on type RootQueryType",
-               position: 66,
+               position: 62,
                severity: :error
              }
            ]
   end
 
-  defmodule SimpleGoblet4 do
-    use Goblet, from: "./test/schema.json"
-  end
-
-  defmodule Simple4 do
-    use SimpleGoblet4
+  defmodule Queries4 do
+    use MyGoblet
 
     query "GetId" do
       id
@@ -97,25 +88,21 @@ defmodule GobletTest do
   end
 
   test "can define multiple queries" do
-    assert Simple4.get_id() == %{
+    assert Queries4.get_id() == %{
              "operationName" => "GetId",
              "query" => "query GetId {id}",
              "variables" => %{}
            }
 
-    assert Simple4.get_age() == %{
+    assert Queries4.get_age() == %{
              "operationName" => "GetAge",
              "query" => "query GetAge {age}",
              "variables" => %{}
            }
   end
 
-  defmodule ComplexGoblet do
-    use Goblet, from: "./test/schema.json"
-  end
-
-  defmodule Complex do
-    use ComplexGoblet
+  defmodule ComplexQueries do
+    use MyGoblet
 
     query "MoreInteresting" do
       ages
@@ -148,7 +135,7 @@ defmodule GobletTest do
   end
 
   test "can define more complex queries" do
-    assert Complex.more_interesting() == %{
+    assert ComplexQueries.more_interesting() == %{
              "operationName" => "MoreInteresting",
              "query" =>
                "query MoreInteresting {ages withArgs(a: \"hi\", b: \"hello\") thing {name} things {name} requiredThing {name} requiredThings {name} requiredThingsAgain {name} doublyRequiredThings {name}}",
