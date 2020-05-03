@@ -13,8 +13,7 @@ defmodule Goblet do
       defmacro query(name, do: expr) do
         schema = unquote(schema |> Macro.escape())
         fn_name = name |> Macro.underscore() |> String.to_atom()
-        {str, var_str} = Goblet.build(expr, schema, "queryType", __CALLER__.file)
-        body = "query #{name}#{var_str} {#{str}}"
+        body = Goblet.build(:query, name, expr, schema, __CALLER__.file)
 
         # TODO:: determine types of pinned variables and create a typespec here
         quote do
@@ -38,8 +37,7 @@ defmodule Goblet do
       defmacro mutation(name, do: expr) do
         schema = unquote(schema |> Macro.escape())
         fn_name = name |> Macro.underscore() |> String.to_atom()
-        {str, var_str} = Goblet.build(expr, schema, "mutationType", __CALLER__.file)
-        body = "mutation #{name}#{var_str} {#{str}}"
+        body = Goblet.build(:mutation, name, expr, schema, __CALLER__.file)
 
         # TODO:: determine types of pinned variables and create a typespec here
         quote do
@@ -68,141 +66,195 @@ defmodule Goblet do
     end
   end
 
-  def build(expr, schema, query_or_mutation, file) do
-    query_type = get_in(schema, [query_or_mutation, "name"])
+  def build(type, name, expr, schema, file) do
+    Goblet.Parser.parse(expr)
+    |> Goblet.Validator.validate(schema, type, file)
+    |> Goblet.Printer.print(type, name)
+  end
+end
+
+defmodule Goblet.Parser do
+  @moduledoc false
+
+  defmodule Statement do
+    defstruct line: nil, field: nil, variables: nil, sub_fields: nil
+  end
+
+  defmodule Variable do
+    defstruct line: nil, key: nil, value: nil
+  end
+
+  def parse(ast) do
+    parse_statement(ast)
+  end
+
+  defp parse_statement({:__block__, _, args}), do: Enum.map(args, &parse_statement/1)
+
+  defp parse_statement({name, [line: line], [[do: expr]]}) do
+    %Statement{
+      line: line,
+      field: name,
+      sub_fields: parse_statement(expr)
+    }
+  end
+
+  defp parse_statement({name, [line: line], [variables, [do: expr]]}) do
+    %Statement{
+      line: line,
+      field: name,
+      variables: parse_variables(variables),
+      sub_fields: parse_statement(expr)
+    }
+  end
+
+  defp parse_statement({name, [line: line], [variables]}) do
+    %Statement{
+      line: line,
+      field: name,
+      variables: parse_variables(variables)
+    }
+  end
+
+  defp parse_statement({name, [line: line], []}) do
+    %Statement{
+      line: line,
+      field: name
+    }
+  end
+
+  defp parse_statement({name, [line: line], nil}) do
+    %Statement{
+      line: line,
+      field: name
+    }
+  end
+
+  defp parse_variables(variables) do
+    Enum.map(variables, &parse_variable/1)
+  end
+
+  defp parse_variable({key, value})
+       when is_number(value) or is_boolean(value) or is_binary(value) do
+    %Variable{
+      key: key,
+      value: {:value, value}
+    }
+  end
+
+  defp parse_variable({key, {:^, [line: line], [{value, _, _}]}}) do
+    %Variable{
+      line: line,
+      key: key,
+      value: {:reference, value}
+    }
+  end
+end
+
+defmodule Goblet.Validator do
+  @moduledoc false
+
+  def validate(parsed, schema, type, file) do
+    root_type = get_root_type(type, schema)
     types = Map.get(schema, "types")
-    {str, vars} = parse_gql(expr, query_type, %{types: types, file: file, line: 0, name: ""})
-
-    var_str =
-      case Enum.map(vars || [], fn {key, type} -> "$#{key}: #{type}" end) do
-        [] -> ""
-        vars -> "(#{Enum.join(vars, ", ")})"
-      end
-
-    {str, var_str}
+    ctx = %{types: types, file: file, line: 0, name: ""}
+    validate_statement(parsed, root_type, ctx)
+    parsed
   end
 
-  defp parse_gql({:__block__, _, args}, cur_type, ctx) do
-    {strs, vars} = Enum.map(args, &parse_gql(&1, cur_type, ctx)) |> Enum.unzip()
-    {Enum.join(strs, " "), combine_vars(vars)}
+  defp get_root_type(:query, schema), do: get_in(schema, ["queryType", "name"])
+  defp get_root_type(:mutation, schema), do: get_in(schema, ["mutationType", "name"])
+
+  defp validate_statement(statements, cur_type, ctx) when is_list(statements) do
+    # TODO:: check for duplicate keys
+    Enum.map(statements, &validate_statement(&1, cur_type, ctx))
   end
 
-  defp parse_gql({name, [line: line], rest}, cur_type, %{types: types} = ctx) do
-    field_name = Atom.to_string(name)
-    ctx = %{ctx | line: line, name: "#{cur_type}.#{field_name}"}
+  defp validate_statement(%{field: name, line: line} = statement, cur_type, %{types: types} = ctx) do
+    ctx = %{ctx | line: line, name: "#{cur_type}.#{name}"}
 
     case Enum.find(types, &(&1["name"] == cur_type)) do
       nil ->
         error("type #{cur_type} not found in the schema", ctx)
 
-      type ->
-        case Enum.find(type["fields"], &(&1["name"] == field_name)) do
+      %{"fields" => fields} ->
+        case Enum.find(fields, &(&1["name"] == Atom.to_string(name))) do
           nil ->
-            error("Could not find field #{field_name} on type #{cur_type}", ctx)
+            error("Unexpected field #{name} on type #{cur_type}", ctx)
 
-          field ->
-            actual_type = unwrap_type(field["type"])
+          %{"type" => type, "args" => args} ->
+            actual_type = unwrap_type(type)
             object_name = if actual_type["kind"] == "OBJECT", do: actual_type["name"]
 
-            case {object_name, field["args"], rest} do
-              {nil, _, [[do: _expr]]} ->
+            cond do
+              statement.sub_fields && !object_name ->
                 error("Did not expect to find a subquery on #{ctx.name}", ctx)
 
-              {nil, _, [_variables, [do: _expr]]} ->
-                error("Did not expect to find a subquery on #{ctx.name}", ctx)
-
-              {nil, [], [_variables]} ->
-                error("#{ctx.name} does not accept any args", ctx)
-
-              {nil, args, [variables]} ->
-                {str, vars} = parse_variables(variables, args, ctx)
-                {"#{field_name}(#{str})", vars}
-
-              {nil, _, nil} ->
-                {field_name, nil}
-
-              {nil, _, _} ->
-                error("Not really sure what happened here...", ctx)
-
-              {_, [], [_variables, [do: _expr]]} ->
-                error("#{ctx.name} does not accept any args", ctx)
-
-              {name, args, [variables, [do: expr]]} ->
-                {str, vars} = parse_variables(variables, args, ctx)
-                {str2, vars2} = parse_gql(expr, name, ctx)
-                {"#{field_name}(#{str}) {#{str2}}", combine_vars([vars, vars2])}
-
-              {name, _, [[do: expr]]} ->
-                {str, vars} = parse_gql(expr, name, ctx)
-                {"#{field_name} {#{str}}", vars}
-
-              {_, _, _} ->
+              !statement.sub_fields && object_name ->
                 error("Expected a subquery on #{ctx.name}. Are you missing a do...end?", ctx)
+
+              statement.sub_fields ->
+                validate_statement(statement.sub_fields, object_name, ctx)
+
+              true ->
+                nil
+            end
+
+            cond do
+              # TODO:: check for required variables
+
+              statement.variables && Enum.empty?(args) ->
+                error("#{ctx.name} does not accept any args", ctx)
+
+              statement.variables ->
+                validate_variables(statement.variables, args, ctx)
+
+              true ->
+                nil
             end
         end
     end
   end
 
-  defp parse_variables(variables, args, ctx) do
-    {strs, vars} =
-      variables
-      |> Enum.map(fn {key, value} ->
-        key = Atom.to_string(key)
-
-        # Refactor this, unwrapping is the wrong thing to do here. We need to preserve LIST and NON_NULL
-        arg =
-          case Enum.find(args, &(&1["name"] == key)) do
-            %{"type" => type} -> unwrap_type(type)
-            _ -> nil
-          end
-
-        {key, value, arg}
-      end)
-      |> Enum.map(&parse_variable(&1, ctx))
-      |> Enum.unzip()
-
-    {Enum.join(strs, ", "), combine_vars(vars)}
+  defp validate_variables(variables, args, ctx) do
+    # TODO:: Check for duplicate variables
+    get_arg = fn %{key: key} -> Enum.find(args, &(&1["name"] == Atom.to_string(key))) end
+    Enum.map(variables, &validate_variable(&1, get_arg.(&1), ctx))
   end
 
-  defp parse_variable({key, _value, nil}, ctx) do
+  # TODO:: support object literals in variables
+  # TODO:: support array literals in variables
+
+  defp validate_variable(%{key: key}, nil, ctx) do
     error("Unexpected variable #{key} on #{ctx.name}", ctx)
   end
 
-  defp parse_variable({key, value, %{"kind" => "SCALAR", "name" => "Int"}}, _)
-       when is_number(value) do
-    {"#{key}: #{value}", nil}
+  # TODO:: If a variable reference doesn't match a previously set one, error
+  defp validate_variable(%{value: {:reference, _}}, _, _), do: nil
+
+  defp validate_variable(%{key: key, value: {:value, value}}, arg, ctx) when is_number(value) do
+    if !is_maybe_nullable(arg, "Int") do
+      error("Expected variable #{key} on #{ctx.name} to be a #{arg["name"]}", ctx)
+    end
   end
 
-  defp parse_variable({key, value, arg}, ctx) when is_number(value) do
-    error("Expected arg #{key} on #{ctx.name} to be a #{arg["name"]}", ctx)
+  defp validate_variable(%{key: key, value: {:value, value}}, arg, ctx) when is_binary(value) do
+    if !is_maybe_nullable(arg, "String") && !is_maybe_nullable(arg, "ID") do
+      error("Expected variable #{key} on #{ctx.name} to be a #{arg["name"]}", ctx)
+    end
   end
 
-  defp parse_variable({key, value, %{"kind" => "SCALAR", "name" => "Boolean"}}, _)
-       when is_boolean(value) do
-    {"#{key}: #{value}", nil}
+  defp validate_variable(%{key: key, value: {:value, value}}, arg, ctx) when is_boolean(value) do
+    if !is_maybe_nullable(arg, "Boolean") do
+      error("Expected variable #{key} on #{ctx.name} to be a #{arg["name"]}", ctx)
+    end
   end
 
-  defp parse_variable({key, value, arg}, ctx) when is_boolean(value) do
-    error("Expected arg #{key} on #{ctx.name} to be a #{arg["name"]}", ctx)
-  end
-
-  defp parse_variable({key, value, %{"kind" => "SCALAR", "name" => name}}, _)
-       when is_binary(value) and name in ["String", "ID"] do
-    {"#{key}: \"#{value}\"", nil}
-  end
-
-  defp parse_variable({key, value, arg}, ctx) when is_binary(value) do
-    error("Expected arg #{key} on #{ctx.name} to be a #{arg["name"]}", ctx)
-  end
-
-  defp parse_variable({key, {:^, _, [{key2, _, _}]}, arg}, _) do
-    {"#{key}: $#{Atom.to_string(key2)}", [{key2, arg["name"]}]}
-  end
-
-  defp combine_vars(vars) do
-    # TODO:: Check for inconsistencies here
-    Enum.filter(vars, & &1)
-    |> List.flatten()
+  defp is_maybe_nullable(arg, type) do
+    case arg do
+      %{"name" => ^type} -> true
+      %{"kind" => "NON_NULL", "ofType" => %{"name" => ^type}} -> true
+      _ -> false
+    end
   end
 
   defp unwrap_type(%{"ofType" => nil} = type), do: type
@@ -211,5 +263,51 @@ defmodule Goblet do
   defp error(message, ctx) do
     :ok = EditorDiagnostics.report(:error, message, ctx.file, ctx.line, "goblet")
     {"", nil}
+  end
+end
+
+defmodule Goblet.Printer do
+  @moduledoc false
+
+  def print(parsed, type, name) do
+    # TODO:: if there are variable references, print them all here at the root: ($thing: String)
+    body = print_statement(parsed)
+    "#{type} #{name} {#{body}}"
+  end
+
+  defp print_statement(statements) when is_list(statements) do
+    Enum.map(statements, &print_statement/1) |> Enum.join(" ")
+  end
+
+  defp print_statement(%{field: field, sub_fields: nil, variables: nil}) do
+    "#{field}"
+  end
+
+  defp print_statement(%{field: field, sub_fields: nil, variables: variables}) do
+    "#{field}(#{print_variables(variables)})"
+  end
+
+  defp print_statement(%{field: field, sub_fields: sub_fields, variables: nil}) do
+    "#{field} {#{print_statement(sub_fields)}}"
+  end
+
+  defp print_statement(%{field: field, sub_fields: sub_fields, variables: variables}) do
+    "#{field}(#{print_variables(variables)}) {#{print_statement(sub_fields)}}"
+  end
+
+  def print_variables(variables) do
+    Enum.map(variables, &print_variable/1) |> Enum.join(", ")
+  end
+
+  def print_variable(%{key: key, value: {:value, value}}) when is_binary(value) do
+    "#{key}: \"#{value}\""
+  end
+
+  def print_variable(%{key: key, value: {:value, value}}) do
+    "#{key}: #{value}"
+  end
+
+  def print_variable(%{key: key, value: {:reference, value}}) do
+    "#{key}: $#{value}"
   end
 end
