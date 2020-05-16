@@ -13,7 +13,10 @@ defmodule Goblet do
       defmacro query(name, do: expr) do
         schema = unquote(schema |> Macro.escape())
         fn_name = name |> Macro.underscore() |> String.to_atom()
-        body = Goblet.build(:query, name, expr, schema, __CALLER__.file)
+        body = Goblet.build(:query, name, expr, schema, fn_name, __CALLER__)
+
+        # raise "There are errors in your query"
+        # reraise "There are errors in your query", Macro.Env.stacktrace(__CALLER__)
 
         # TODO:: determine types of pinned variables and create a typespec here
         quote do
@@ -37,7 +40,7 @@ defmodule Goblet do
       defmacro mutation(name, do: expr) do
         schema = unquote(schema |> Macro.escape())
         fn_name = name |> Macro.underscore() |> String.to_atom()
-        body = Goblet.build(:mutation, name, expr, schema, __CALLER__.file)
+        body = Goblet.build(:mutation, name, expr, schema, fn_name, __CALLER__)
 
         # TODO:: determine types of pinned variables and create a typespec here
         quote do
@@ -66,10 +69,23 @@ defmodule Goblet do
     end
   end
 
-  def build(type, name, expr, schema, file) do
+  def build(type, name, expr, schema, fn_name, caller) do
     Goblet.Parser.parse(expr)
-    |> Goblet.Validator.validate(schema, type, file)
+    |> Goblet.Validator.validate(schema, type, {fn_name, caller})
     |> Goblet.Printer.print(type, name)
+  end
+end
+
+defmodule Goblet.Diagnostics do
+  import Macro.Env, only: [stacktrace: 1]
+
+  def error(message, ctx), do: do_report(message, ctx, {IO, :warn})
+  def warn(message, ctx), do: do_report(message, ctx, {IO, :warn})
+  def critical(message, ctx), do: do_report(message, ctx, {Kernel, :reraise})
+
+  def do_report(message, %{err_ctx: {name, caller}, line: line}, {mod, fun}) do
+    trace = stacktrace(%{caller | line: line, function: {name, 0}})
+    apply(mod, fun, [message, trace])
   end
 end
 
@@ -152,11 +168,12 @@ end
 
 defmodule Goblet.Validator do
   @moduledoc false
+  import Goblet.Diagnostics
 
-  def validate(parsed, schema, type, file) do
+  def validate(parsed, schema, type, err_ctx) do
     root_type = get_root_type(type, schema)
     types = Map.get(schema, "types")
-    ctx = %{types: types, file: file, line: 0, name: ""}
+    ctx = %{types: types, err_ctx: err_ctx, line: 0, name: ""}
     validate_statement(parsed, root_type, ctx)
     parsed
   end
@@ -259,11 +276,6 @@ defmodule Goblet.Validator do
 
   defp unwrap_type(%{"ofType" => nil} = type), do: type
   defp unwrap_type(%{"ofType" => type}), do: unwrap_type(type)
-
-  defp error(message, ctx) do
-    :ok = EditorDiagnostics.report(:error, message, ctx.file, ctx.line, "goblet")
-    {"", nil}
-  end
 end
 
 defmodule Goblet.Printer do

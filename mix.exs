@@ -26,7 +26,6 @@ defmodule Goblet.MixProject do
   defp deps do
     [
       {:ex_doc, ">= 0.0.0", only: :dev},
-      {:editor_diagnostics, "~> 0.2.0"},
       {:jason, "~> 1.0"}
     ]
   end
