@@ -1,11 +1,6 @@
 defmodule Goblet.Validator do
   @moduledoc false
 
-  def error(message, ctx) do
-    Goblet.Diagnostics.error(message, ctx)
-    true
-  end
-
   def validate(parsed, schema, type, err_ctx) do
     root_type = get_root_type(type, schema)
     types = Map.get(schema, "types")
@@ -116,4 +111,18 @@ defmodule Goblet.Validator do
 
   defp unwrap_type(%{"ofType" => nil} = type), do: type
   defp unwrap_type(%{"ofType" => type}), do: unwrap_type(type)
+
+  defp get_trace(%{err_ctx: {name, caller}, line: line}) do
+    Macro.Env.stacktrace(%{caller | line: line, function: {name, 0}})
+  end
+
+  defp error(message, ctx) do
+    IO.warn(message, get_trace(ctx))
+    true
+  end
+
+  defp warn(message, ctx) do
+    IO.warn(message, get_trace(ctx))
+    nil
+  end
 end
