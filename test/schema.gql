@@ -1,0 +1,19 @@
+query {
+  id # String
+  age # Int
+  ages # [Int]
+  doublyRequiredThings # [Thing!]!
+  requiredThing # Thing!
+  requiredThings # [Thing!]
+  requiredThingsAgain # [Thing]!
+  thing # Thing
+  things # [Thing]
+  withArgs(a: Int, b: String, c: Int) # String
+  withRequiredArgs(a: Int!, b: String!, c: Int) # String
+}
+
+type Thing {
+  id # String
+  name # String
+  what(is: Int, this: Int, magic: String) # Int
+}
