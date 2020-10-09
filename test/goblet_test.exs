@@ -350,4 +350,28 @@ defmodule GobletTest do
 
     assert result =~ "Unexpected variable whoops on RootQueryType.withArgs"
   end
+
+  test "reports duplicate variables" do
+    result =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert_raise RuntimeError, fn ->
+          Code.eval_string("""
+          defmodule G12 do
+            use Goblet, from: "./test/schema.json"
+          end
+
+          defmodule Q12 do
+            use G12
+            query "Test" do
+              withArgs(a: 8, a: 7, b: "test")
+            end
+          end
+
+          Q12
+          """)
+        end
+      end)
+
+    assert result =~ "RootQueryType.withArgs was passed more than one arg named a"
+  end
 end

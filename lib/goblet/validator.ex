@@ -11,7 +11,7 @@ defmodule Goblet.Validator do
   end
 
   defp validate_statement(statements, ctx) when is_list(statements) do
-    # TODO:: check for duplicate keys
+    # TODO:: Check for duplicate keys
     Enum.map(statements, &validate_statement(&1, ctx))
   end
 
@@ -20,6 +20,7 @@ defmodule Goblet.Validator do
 
     case type do
       nil ->
+        # TODO:: Figure out where this error should exist, or delete it
         # error("type #{parent} not found in the schema", ctx)
         error("Unexpected field #{name} on type #{parent}", ctx)
 
@@ -53,7 +54,14 @@ defmodule Goblet.Validator do
       error("#{ctx.name} is missing required arg #{name}", ctx)
     end)
 
-    # TODO:: Check for duplicate variables
+    variables &&
+      Enum.filter(variables, & &1.type)
+      |> Enum.group_by(& &1.key)
+      |> Enum.filter(fn {_, val} -> length(val) > 1 end)
+      |> Enum.map(fn {key, _} ->
+        error("#{ctx.name} was passed more than one arg named #{key}", ctx)
+      end)
+
     variables && Enum.map(variables, &validate_variable(&1, ctx))
   end
 
@@ -63,8 +71,6 @@ defmodule Goblet.Validator do
     Enum.find(variables, fn %{key: key} -> Atom.to_string(key) == name end)
   end
 
-  # TODO:: support object literals in variables
-  # TODO:: support array literals in variables
   defp validate_variable(%{key: key, type: nil}, ctx) do
     error("Unexpected variable #{key} on #{ctx.name}", ctx)
   end
@@ -94,6 +100,8 @@ defmodule Goblet.Validator do
     end
   end
 
+  # TODO:: Support object literals in variables
+  # TODO:: Support array literals in variables
   defp validate_variable(%{key: key, value: {:not_implemented, _value}, type: _type}, ctx) do
     error(
       "The value entered for variable #{key} on #{ctx.name} is not supported. Goblet currently only supports number, string, and boolean literals. Use a pinned variable instead: ^thing",
