@@ -213,7 +213,7 @@
                 "name": "a",
                 "type": {
                   "kind": "SCALAR",
-                  "name": "String",
+                  "name": "Int",
                   "ofType": null
                 }
               },
@@ -223,6 +223,15 @@
                 "type": {
                   "kind": "SCALAR",
                   "name": "String",
+                  "ofType": null
+                }
+              },
+              {
+                "defaultValue": null,
+                "name": "c",
+                "type": {
+                  "kind": "SCALAR",
+                  "name": "Int",
                   "ofType": null
                 }
               }
@@ -246,7 +255,7 @@
                   "name": null,
                   "ofType": {
                     "kind": "SCALAR",
-                    "name": "String",
+                    "name": "Int",
                     "ofType": null
                   }
                 }
@@ -262,6 +271,15 @@
                     "name": "String",
                     "ofType": null
                   }
+                }
+              },
+              {
+                "defaultValue": null,
+                "name": "c",
+                "type": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
                 }
               }
             ],
@@ -312,6 +330,45 @@
             "type": {
               "kind": "SCALAR",
               "name": "String",
+              "ofType": null
+            }
+          },
+          {
+            "args": [
+              {
+                "defaultValue": null,
+                "name": "is",
+                "type": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              {
+                "defaultValue": null,
+                "name": "this",
+                "type": {
+                  "kind": "SCALAR",
+                  "name": "Int",
+                  "ofType": null
+                }
+              },
+              {
+                "defaultValue": null,
+                "name": "magic",
+                "type": {
+                  "kind": "SCALAR",
+                  "name": "String",
+                  "ofType": null
+                }
+              }
+            ],
+            "deprecationReason": null,
+            "isDeprecated": false,
+            "name": "what",
+            "type": {
+              "kind": "SCALAR",
+              "name": "Int",
               "ofType": null
             }
           }

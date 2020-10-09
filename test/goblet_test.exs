@@ -120,6 +120,32 @@ defmodule GobletTest do
     assert result =~ "Unexpected field whoops on type RootQueryType"
   end
 
+  test "reports nested errors" do
+    result =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert_raise RuntimeError, fn ->
+          Code.eval_string("""
+          defmodule G51 do
+            use Goblet, from: "./test/schema.json"
+          end
+
+          defmodule Q51 do
+            use G51
+            query "Test" do
+              thing do
+                lololol
+              end
+            end
+          end
+
+          Q51
+          """)
+        end
+      end)
+
+    assert result =~ "Unexpected field lololol on type Thing"
+  end
+
   test "can define multiple queries" do
     {mod, _} =
       Code.eval_string("""
@@ -164,7 +190,7 @@ defmodule GobletTest do
         use G7
         query "MoreInteresting" do
           ages
-          withArgs(a: "hi", b: "hello")
+          withArgs(a: 7, b: "hello")
           thing do
             name
           end
@@ -192,8 +218,136 @@ defmodule GobletTest do
     assert mod.more_interesting() == %{
              "operationName" => "MoreInteresting",
              "query" =>
-               "query MoreInteresting {ages withArgs(a: \"hi\", b: \"hello\") thing {name} things {name} requiredThing {name} requiredThings {name} requiredThingsAgain {name} doublyRequiredThings {name}}",
+               "query MoreInteresting {ages withArgs(a: 7, b: \"hello\") thing {name} things {name} requiredThing {name} requiredThings {name} requiredThingsAgain {name} doublyRequiredThings {name}}",
              "variables" => %{}
            }
+  end
+
+  test "can pin variables" do
+    {mod, _} =
+      Code.eval_string("""
+      defmodule G8 do
+        use Goblet, from: "./test/schema.json"
+      end
+
+      defmodule Q8 do
+        use G8
+        query "Test" do
+          withArgs(a: ^my_num, b: ^my_str)
+          withRequiredArgs(a: ^my_num_2, b: ^my_str_2, c: 7)
+          thing do
+            what(is: ^my_num_3, this: ^my_num_4, magic: ^my_str_3)
+          end
+        end
+      end
+
+      Q8
+      """)
+
+    assert mod.test() == %{
+             "operationName" => "Test",
+             "query" =>
+               "query Test($my_num: Int, $my_num_2: Int!, $my_num_3: Int, $my_num_4: Int, $my_str: String, $my_str_2: String!, $my_str_3: String) {withArgs(a: $my_num, b: $my_str) withRequiredArgs(a: $my_num_2, b: $my_str_2, c: 7) thing {what(is: $my_num_3, this: $my_num_4, magic: $my_str_3)}}",
+             "variables" => %{}
+           }
+  end
+
+  test "variables can share pins" do
+    {mod, _} =
+      Code.eval_string("""
+      defmodule G81 do
+        use Goblet, from: "./test/schema.json"
+      end
+
+      defmodule Q81 do
+        use G81
+        query "Test" do
+          withArgs(a: ^my_num, b: ^my_str)
+          withRequiredArgs(a: ^my_num, b: ^my_str, c: ^my_num)
+        end
+      end
+
+      Q81
+      """)
+
+    assert mod.test() == %{
+             "operationName" => "Test",
+             "query" =>
+               "query Test($my_num: Int!, $my_str: String!) {withArgs(a: $my_num, b: $my_str) withRequiredArgs(a: $my_num, b: $my_str, c: $my_num)}",
+             "variables" => %{}
+           }
+  end
+
+  test "cannot pin same variable to different types" do
+    result =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert_raise RuntimeError, fn ->
+          Code.eval_string("""
+          defmodule G9 do
+            use Goblet, from: "./test/schema.json"
+          end
+
+          defmodule Q9 do
+            use G9
+            query "Test" do
+              withArgs(a: ^my_num, b: ^my_str)
+              withRequiredArgs(a: ^my_num, b: ^my_str, c: ^my_str)
+            end
+          end
+
+          Q9
+          """)
+        end
+      end)
+
+    assert result =~ "cannot pin my_str to both types Int and String"
+  end
+
+  test "reports missing required variables" do
+    result =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert_raise RuntimeError, fn ->
+          Code.eval_string("""
+          defmodule G10 do
+            use Goblet, from: "./test/schema.json"
+          end
+
+          defmodule Q10 do
+            use G10
+            query "Test" do
+              withRequiredArgs(a: 2)
+            end
+          end
+
+          Q10
+          """)
+        end
+      end)
+
+    assert result =~ "RootQueryType.withRequiredArgs is missing required arg b"
+  end
+
+  test "reports extra variables" do
+    result =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert_raise RuntimeError, fn ->
+          Code.eval_string("""
+          defmodule G11 do
+            use Goblet, from: "./test/schema.json"
+          end
+
+          defmodule Q11 do
+            use G11
+            query "Test" do
+              withArgs(whoops: 8)
+            end
+          end
+
+          Q11
+          """)
+        end
+      end)
+
+    assert result =~ "Unexpected variable whoops on RootQueryType.withArgs"
   end
 end

@@ -3,10 +3,10 @@ defmodule Goblet.Printer do
 
   def print(:error, _, _), do: :error
 
-  def print(parsed, type, name) do
-    # TODO:: if there are variable references, print them all here at the root: ($thing: String)
+  def print({parsed, refs}, type, name) do
     body = print_statement(parsed)
-    "#{type} #{name} {#{body}}"
+    refs = print_references(refs)
+    "#{type} #{name}#{refs} {#{body}}"
   end
 
   defp print_statement(statements) when is_list(statements) do
@@ -29,19 +29,26 @@ defmodule Goblet.Printer do
     "#{field}(#{print_variables(variables)}) {#{print_statement(sub_fields)}}"
   end
 
-  def print_variables(variables) do
+  defp print_variables(variables) do
     Enum.map(variables, &print_variable/1) |> Enum.join(", ")
   end
 
-  def print_variable(%{key: key, value: {:value, value}}) when is_binary(value) do
+  defp print_variable(%{key: key, value: {:value, value}}) when is_binary(value) do
     "#{key}: \"#{value}\""
   end
 
-  def print_variable(%{key: key, value: {:value, value}}) do
+  defp print_variable(%{key: key, value: {:value, value}}) do
     "#{key}: #{value}"
   end
 
-  def print_variable(%{key: key, value: {:reference, value}}) do
+  defp print_variable(%{key: key, value: {:reference, value}}) do
     "#{key}: $#{value}"
+  end
+
+  defp print_references(refs) do
+    case Enum.map(refs, fn {key, val} -> "$#{key}: #{val}" end) do
+      [] -> ""
+      strs -> "(#{Enum.join(strs, ", ")})"
+    end
   end
 end

@@ -16,7 +16,6 @@ defmodule Goblet do
         body = Goblet.build(:query, name, expr, schema, fn_name, __CALLER__)
 
         if body == :error do
-          # raise "There are errors in your query"
           reraise "There are errors in your query", Macro.Env.stacktrace(__CALLER__)
         end
 
@@ -72,8 +71,8 @@ defmodule Goblet do
   end
 
   def build(type, name, expr, schema, fn_name, caller) do
-    Goblet.Parser.parse(expr)
-    |> Goblet.Validator.validate(schema, type, {fn_name, caller})
+    Goblet.Parser.parse(expr, type, schema)
+    |> Goblet.Validator.validate({fn_name, caller})
     |> Goblet.Printer.print(type, name)
   end
 end
