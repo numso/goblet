@@ -374,4 +374,151 @@ defmodule GobletTest do
 
     assert result =~ "RootQueryType.withArgs was passed more than one arg named a"
   end
+
+  test "fields may be renamed with @as" do
+    {mod, _} =
+      Code.eval_string("""
+      defmodule G13 do
+        use Goblet, from: "./test/schema.json"
+      end
+
+      defmodule Q13 do
+        use G13
+        query "Test" do
+          @as "otherThing"
+          thing do
+            @as "newId"
+            id
+          end
+        end
+      end
+
+      Q13
+      """)
+
+    assert mod.test() == %{
+             "operationName" => "Test",
+             "query" => "query Test {otherThing:thing {newId:id}}",
+             "variables" => %{}
+           }
+  end
+
+  test "the @as directive must be named with a string" do
+    result =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert_raise RuntimeError, fn ->
+          Code.eval_string("""
+          defmodule G14 do
+            use Goblet, from: "./test/schema.json"
+          end
+
+          defmodule Q14 do
+            use G14
+            query "Test" do
+              @as 7
+              thing do
+                @as something
+                id
+              end
+            end
+          end
+
+          Q14
+          """)
+        end
+      end)
+
+    assert result =~ ~s(Alias names must be a string: @as "foo")
+    assert result =~ "nofile:8"
+    assert result =~ "nofile:10"
+  end
+
+  test "directives other than @as are not supported" do
+    result =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert_raise RuntimeError, fn ->
+          Code.eval_string("""
+          defmodule G15 do
+            use Goblet, from: "./test/schema.json"
+          end
+
+          defmodule Q15 do
+            use G15
+            query "Test" do
+              @include something
+              thing do
+                id
+              end
+            end
+          end
+
+          Q15
+          """)
+        end
+      end)
+
+    assert result =~ "Directives are not yet supported"
+  end
+
+  test "directives must preceed a field" do
+    result =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert_raise RuntimeError, fn ->
+          Code.eval_string("""
+          defmodule G16 do
+            use Goblet, from: "./test/schema.json"
+          end
+
+          defmodule Q16 do
+            use G16
+            query "Test" do
+              thing do
+                id
+                @as "invalid"
+              end
+              @as "also invalid"
+            end
+          end
+
+          Q16
+          """)
+        end
+      end)
+
+    assert result =~ "directives should always be placed before fields"
+    assert result =~ "nofile:10"
+    assert result =~ "nofile:12"
+  end
+
+  test "field names must be unique" do
+    result =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert_raise RuntimeError, fn ->
+          Code.eval_string("""
+          defmodule G17 do
+            use Goblet, from: "./test/schema.json"
+          end
+
+          defmodule Q17 do
+            use G17
+            query "Test" do
+              age
+              age
+              @as "age"
+              thing do
+                id
+              end
+            end
+          end
+
+          Q17
+          """)
+        end
+      end)
+
+    assert result =~ "Multiple fields found with the same name: age."
+    assert result =~ "nofile:8"
+    assert result =~ "nofile:9"
+    assert result =~ "nofile:11"
+  end
 end

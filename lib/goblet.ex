@@ -43,6 +43,10 @@ defmodule Goblet do
         fn_name = name |> Macro.underscore() |> String.to_atom()
         body = Goblet.build(:mutation, name, expr, schema, fn_name, __CALLER__)
 
+        if body == :error do
+          reraise "There are errors in your mutation", Macro.Env.stacktrace(__CALLER__)
+        end
+
         # TODO:: determine types of pinned variables and create a typespec here
         quote do
           def unquote(fn_name)(variables \\ %{}) do

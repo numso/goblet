@@ -11,12 +11,28 @@ defmodule Goblet.Validator do
   end
 
   defp validate_statement(statements, ctx) when is_list(statements) do
-    # TODO:: Check for duplicate keys
+    Enum.filter(statements, &is_statement/1)
+    |> map_non_uniq(&get_statement_name/1, fn {_, conflicting} -> conflicting end)
+    |> Enum.map(fn %{line: line} = statement ->
+      name = get_statement_name(statement)
+      error("Multiple fields found with the same name: #{name}.", %{ctx | line: line})
+    end)
+
     Enum.map(statements, &validate_statement(&1, ctx))
+  end
+
+  defp validate_statement({:error, {message, line}}, ctx) do
+    error(message, %{ctx | line: line})
   end
 
   defp validate_statement(%{field: name, parent: parent, type: type} = statement, ctx) do
     ctx = %{ctx | line: statement.line, name: "#{parent}.#{name}"}
+
+    Enum.map(statement.attrs, fn
+      {:as, _, name} when is_binary(name) -> nil
+      {:as, line, _} -> error(~s(Alias names must be a string: @as "foo"), %{ctx | line: line})
+      {_, line, _} -> error("Directives are not yet supported", %{ctx | line: line})
+    end)
 
     case type do
       nil ->
@@ -43,7 +59,7 @@ defmodule Goblet.Validator do
     end
   end
 
-  defp validate_variables(variables, [], ctx) when not is_nil(variables) do
+  defp validate_variables([_ | _], [], ctx) do
     error("#{ctx.name} does not accept any args", ctx)
   end
 
@@ -54,18 +70,16 @@ defmodule Goblet.Validator do
       error("#{ctx.name} is missing required arg #{name}", ctx)
     end)
 
-    variables &&
-      Enum.filter(variables, & &1.type)
-      |> Enum.group_by(& &1.key)
-      |> Enum.filter(fn {_, val} -> length(val) > 1 end)
-      |> Enum.map(fn {key, _} ->
-        error("#{ctx.name} was passed more than one arg named #{key}", ctx)
-      end)
+    Enum.filter(variables, & &1.type)
+    |> map_non_uniq(& &1.key, fn {key, _} ->
+      error("#{ctx.name} was passed more than one arg named #{key}", ctx)
+      []
+    end)
 
-    variables && Enum.map(variables, &validate_variable(&1, ctx))
+    Enum.map(variables, &validate_variable(&1, ctx))
   end
 
-  defp variable_exists(_, nil), do: false
+  defp variable_exists(_, []), do: false
 
   defp variable_exists(%{"name" => name}, variables) do
     Enum.find(variables, fn %{key: key} -> Atom.to_string(key) == name end)
@@ -88,7 +102,7 @@ defmodule Goblet.Validator do
 
   defp validate_variable(%{key: key, value: {:value, value}, type: type}, ctx)
        when is_binary(value) do
-    if !is_maybe_nullable(type, "String") && !is_maybe_nullable(type, "ID") do
+    if !is_maybe_nullable(type, "String") and !is_maybe_nullable(type, "ID") do
       error("Expected variable #{key} on #{ctx.name} to be of type #{print(type["type"])}", ctx)
     end
   end
@@ -117,10 +131,26 @@ defmodule Goblet.Validator do
     end
   end
 
-  defp is_object(type), do: unwrap(type) |> Map.get("kind") === "OBJECT"
+  defp is_object(type), do: unwrap(type) |> Map.get("kind") == "OBJECT"
   defp unwrap(%{"ofType" => nil} = type), do: type
   defp unwrap(%{"ofType" => type}), do: unwrap(type)
 
   defp is_required(%{"type" => %{"kind" => "NON_NULL"}}), do: true
   defp is_required(_), do: false
+
+  defp is_statement(%Goblet.Parser.Statement{}), do: true
+  defp is_statement(_), do: false
+
+  defp map_non_uniq(collection, groupFunc, func) do
+    Enum.group_by(collection, groupFunc)
+    |> Enum.filter(fn {_, val} -> length(val) > 1 end)
+    |> Enum.flat_map(func)
+  end
+
+  defp get_statement_name(%{attrs: attrs, field: name}) do
+    case Enum.find(attrs, fn {key, _, _} -> key == :as end) do
+      nil -> Atom.to_string(name)
+      {_, _, name} -> name
+    end
+  end
 end

@@ -13,20 +13,16 @@ defmodule Goblet.Printer do
     Enum.map(statements, &print_statement/1) |> Enum.join(" ")
   end
 
-  defp print_statement(%{field: field, sub_fields: nil, variables: nil}) do
-    "#{field}"
-  end
+  defp print_statement(%{field: field, sub_fields: subs, variables: vars, attrs: attrs}) do
+    rename =
+      case Enum.find(attrs, fn {key, _, _} -> key == :as end) do
+        {_, _, name} when is_binary(name) -> "#{name}:"
+        _ -> ""
+      end
 
-  defp print_statement(%{field: field, sub_fields: nil, variables: variables}) do
-    "#{field}(#{print_variables(variables)})"
-  end
-
-  defp print_statement(%{field: field, sub_fields: sub_fields, variables: nil}) do
-    "#{field} {#{print_statement(sub_fields)}}"
-  end
-
-  defp print_statement(%{field: field, sub_fields: sub_fields, variables: variables}) do
-    "#{field}(#{print_variables(variables)}) {#{print_statement(sub_fields)}}"
+    vars = if vars !== [], do: "(#{print_variables(vars)})", else: ""
+    subs = if subs, do: " {#{print_statement(subs)}}", else: ""
+    "#{rename}#{field}#{vars}#{subs}"
   end
 
   defp print_variables(variables) do

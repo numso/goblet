@@ -1,13 +1,21 @@
+defmodule Goblet.Parser.Statement do
+  defstruct line: nil,
+            field: nil,
+            variables: [],
+            sub_fields: nil,
+            parent: nil,
+            type: nil,
+            attrs: []
+end
+
+defmodule Goblet.Parser.Variable do
+  defstruct line: nil, key: nil, value: nil, type: nil
+end
+
 defmodule Goblet.Parser do
   @moduledoc false
 
-  defmodule Statement do
-    defstruct line: nil, field: nil, variables: nil, sub_fields: nil, parent: nil, type: nil
-  end
-
-  defmodule Variable do
-    defstruct line: nil, key: nil, value: nil, type: nil
-  end
+  alias Goblet.Parser.{Statement, Variable}
 
   def parse(ast, type, schema) do
     root_type = get_root_type(type, schema)
@@ -18,8 +26,24 @@ defmodule Goblet.Parser do
   defp get_root_type(:query, schema), do: get_in(schema, ["queryType", "name"])
   defp get_root_type(:mutation, schema), do: get_in(schema, ["mutationType", "name"])
 
+  defp parse_statement_list([], [], _type, _types), do: []
+
+  defp parse_statement_list([], [{_, line, _} | _], _type, _types) do
+    [{:error, {"directives should always be placed before fields", line}}]
+  end
+
+  defp parse_statement_list([{:@, _, [{key, [line: line], [value]}]} | args], attrs, type, types) do
+    parse_statement_list(args, attrs ++ [{key, line, value}], type, types)
+  end
+
+  defp parse_statement_list([arg | args], attrs, type, types) do
+    statement = parse_statement(arg, type, types)
+    statement = %Statement{statement | attrs: attrs}
+    [statement | parse_statement_list(args, [], type, types)]
+  end
+
   defp parse_statement({:__block__, _, args}, type, types) do
-    Enum.map(args, &parse_statement(&1, type, types))
+    parse_statement_list(args, [], type, types)
   end
 
   defp parse_statement({name, [line: line], [[do: expr]]}, type, types) do
