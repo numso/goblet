@@ -153,24 +153,12 @@ defmodule Goblet.Parser do
   defp determine_type(_name, nil, _types), do: {nil, nil}
 
   defp determine_type(name, type, types) do
-    case Enum.find(types, &(&1["name"] == type)) do
-      %{"fields" => fields} when not is_nil(fields) ->
-        case Enum.find(fields, &(&1["name"] == Atom.to_string(name))) do
-          %{"type" => type} = self ->
-            case unwrap(type) do
-              %{"kind" => kind, "name" => name} when kind in ["OBJECT", "INTERFACE", "UNION"] ->
-                {self, name}
-
-              _ ->
-                {self, nil}
-            end
-
-          _ ->
-            {nil, nil}
-        end
-
-      _ ->
-        {nil, nil}
+    with %{"fields" => fields} <- Enum.find(types, &(&1["name"] == type)),
+         self <- Enum.find(fields, &(&1["name"] == Atom.to_string(name))),
+         %{"kind" => kind, "name" => name} <- unwrap(self["type"]) do
+      {self, if(kind in ["OBJECT", "INTERFACE", "UNION"], do: name)}
+    else
+      _ -> {nil, nil}
     end
   end
 
@@ -195,4 +183,5 @@ defmodule Goblet.Parser do
 
   defp unwrap(%{"ofType" => nil} = type), do: type
   defp unwrap(%{"ofType" => type}), do: unwrap(type)
+  defp unwrap(_), do: nil
 end
