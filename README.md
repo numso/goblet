@@ -10,9 +10,11 @@ The package can be installed by adding `goblet` to your list of dependencies in 
 
 ```elixir
 def deps do
-  [{:goblet, "~> 0.1.3"}]
+  [{:goblet, "~> 0.1.4"}]
 end
 ```
+
+Optionally, add `import_deps: [:goblet]` to your .formatter.exs. This stops parentheses from being auto-injected around fragments.
 
 ## Basic Usage
 
@@ -27,6 +29,7 @@ defmodule MyGoblet do
     ])
     |> Map.get(:body)
     |> Jason.decode!()
+    |> Map.get("data")
   end
 end
 
@@ -43,6 +46,10 @@ defmodule Queries do
         id
         name
         profilePic
+        # inline fragments work too
+        ... on: "BestFriend" do
+          secretHandshake
+        end
       end
 
       # Alias fields using the @as directive
