@@ -143,8 +143,11 @@ defmodule Goblet.Parser do
         case Enum.find(fields, &(&1["name"] == Atom.to_string(name))) do
           %{"type" => type} = self ->
             case unwrap(type) do
-              %{"kind" => "OBJECT", "name" => name} -> {self, name}
-              _ -> {self, nil}
+              %{"kind" => kind, "name" => name} when kind in ["OBJECT", "INTERFACE", "UNION"] ->
+                {self, name}
+
+              _ ->
+                {self, nil}
             end
 
           _ ->

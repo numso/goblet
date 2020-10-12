@@ -41,7 +41,7 @@ defmodule Goblet.Validator do
         error("Unexpected field #{name} on type #{parent}", ctx)
 
       %{"type" => type, "args" => args} ->
-        case {is_object(type), statement.sub_fields} do
+        case {is_object_like(type), statement.sub_fields} do
           {false, nil} ->
             nil
 
@@ -131,9 +131,9 @@ defmodule Goblet.Validator do
     end
   end
 
-  defp is_object(type), do: unwrap(type) |> Map.get("kind") == "OBJECT"
-  defp unwrap(%{"ofType" => nil} = type), do: type
-  defp unwrap(%{"ofType" => type}), do: unwrap(type)
+  defp is_object_like(%{"kind" => kind}) when kind in ["OBJECT", "INTERFACE", "UNION"], do: true
+  defp is_object_like(%{"ofType" => type}), do: is_object_like(type)
+  defp is_object_like(_), do: false
 
   defp is_required(%{"type" => %{"kind" => "NON_NULL"}}), do: true
   defp is_required(_), do: false
