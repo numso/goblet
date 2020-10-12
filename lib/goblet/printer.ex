@@ -13,6 +13,10 @@ defmodule Goblet.Printer do
     Enum.map(statements, &print_statement/1) |> Enum.join(" ")
   end
 
+  defp print_statement(%{fragment: true, field: field, sub_fields: subs}) do
+    "...on #{field} {#{print_statement(subs)}}"
+  end
+
   defp print_statement(%{field: field, sub_fields: subs, variables: vars, attrs: attrs}) do
     rename =
       case Enum.find(attrs, fn {key, _, _} -> key == :as end) do

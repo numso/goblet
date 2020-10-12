@@ -34,13 +34,16 @@ defmodule Goblet.Validator do
       {_, line, _} -> error("Directives are not yet supported", %{ctx | line: line})
     end)
 
-    case type do
-      nil ->
+    case {type, statement} do
+      {nil, %{fragment: true}} ->
+        error("Unexpected fragment type #{name} on type #{parent}", ctx)
+
+      {nil, _} ->
         # TODO:: Figure out where this error should exist, or delete it
         # error("type #{parent} not found in the schema", ctx)
         error("Unexpected field #{name} on type #{parent}", ctx)
 
-      %{"type" => type, "args" => args} ->
+      {%{"type" => type, "args" => args}, _} ->
         case {is_object_like(type), statement.sub_fields} do
           {false, nil} ->
             nil
@@ -56,6 +59,12 @@ defmodule Goblet.Validator do
         end
 
         validate_variables(statement.variables, args, ctx)
+
+      {_, %{fragment: true}} ->
+        case statement.sub_fields do
+          nil -> error("Expected a subquery on #{ctx.name}. Are you missing a do...end?", ctx)
+          fields -> validate_statement(fields, ctx)
+        end
     end
   end
 

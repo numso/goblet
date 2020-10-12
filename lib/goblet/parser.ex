@@ -1,6 +1,7 @@
 defmodule Goblet.Parser.Statement do
   defstruct line: nil,
             field: nil,
+            fragment: nil,
             variables: [],
             sub_fields: nil,
             parent: nil,
@@ -46,62 +47,77 @@ defmodule Goblet.Parser do
     parse_statement_list(args, [], type, types)
   end
 
+  defp parse_statement({:..., [line: line], [[on: parent], [do: expr]]}, type, types)
+       when is_binary(parent) do
+    {full_type, next_type} = determine_union_type(parent, type, types)
+
+    %Statement{
+      line: line,
+      # TODO:: This is bad. Consider making all fields strings instead
+      field: String.to_atom(parent),
+      sub_fields: parse_statement(expr, next_type, types),
+      fragment: true,
+      parent: type,
+      type: full_type
+    }
+  end
+
   defp parse_statement({name, [line: line], [[do: expr]]}, type, types) do
-    {cur_type, next_type} = determine_type(name, type, types)
+    {full_type, next_type} = determine_type(name, type, types)
 
     %Statement{
       line: line,
       field: name,
       sub_fields: parse_statement(expr, next_type, types),
       parent: type,
-      type: cur_type
+      type: full_type
     }
   end
 
   defp parse_statement({name, [line: line], [variables, [do: expr]]}, type, types) do
-    {cur_type, next_type} = determine_type(name, type, types)
+    {full_type, next_type} = determine_type(name, type, types)
 
     %Statement{
       line: line,
       field: name,
-      variables: parse_variables(variables, cur_type),
+      variables: parse_variables(variables, full_type),
       sub_fields: parse_statement(expr, next_type, types),
       parent: type,
-      type: cur_type
+      type: full_type
     }
   end
 
   defp parse_statement({name, [line: line], [variables]}, type, types) do
-    {cur_type, _next_type} = determine_type(name, type, types)
+    {full_type, _next_type} = determine_type(name, type, types)
 
     %Statement{
       line: line,
       field: name,
-      variables: parse_variables(variables, cur_type),
+      variables: parse_variables(variables, full_type),
       parent: type,
-      type: cur_type
+      type: full_type
     }
   end
 
   defp parse_statement({name, [line: line], []}, type, types) do
-    {cur_type, _next_type} = determine_type(name, type, types)
+    {full_type, _next_type} = determine_type(name, type, types)
 
     %Statement{
       line: line,
       field: name,
       parent: type,
-      type: cur_type
+      type: full_type
     }
   end
 
   defp parse_statement({name, [line: line], nil}, type, types) do
-    {cur_type, _next_type} = determine_type(name, type, types)
+    {full_type, _next_type} = determine_type(name, type, types)
 
     %Statement{
       line: line,
       field: name,
       parent: type,
-      type: cur_type
+      type: full_type
     }
   end
 
@@ -139,7 +155,7 @@ defmodule Goblet.Parser do
 
   defp determine_type(name, type, types) do
     case Enum.find(types, &(&1["name"] == type)) do
-      %{"fields" => fields} ->
+      %{"fields" => fields} when not is_nil(fields) ->
         case Enum.find(fields, &(&1["name"] == Atom.to_string(name))) do
           %{"type" => type} = self ->
             case unwrap(type) do
@@ -156,6 +172,19 @@ defmodule Goblet.Parser do
 
       _ ->
         {nil, nil}
+    end
+  end
+
+  defp determine_union_type(_name, nil, _types), do: {nil, nil}
+
+  defp determine_union_type(name, type, types) do
+    with %{"kind" => "UNION", "possibleTypes" => possibles} <-
+           Enum.find(types, &(&1["name"] == type)),
+         %{} <- Enum.find(possibles, &(&1["name"] == name)),
+         self = %{} <- Enum.find(types, &(&1["name"] == name)) do
+      {self, name}
+    else
+      _ -> {nil, nil}
     end
   end
 
