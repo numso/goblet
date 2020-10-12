@@ -53,8 +53,7 @@ defmodule Goblet.Parser do
 
     %Statement{
       line: line,
-      # TODO:: This is bad. Consider making all fields strings instead
-      field: String.to_atom(parent),
+      field: parent,
       sub_fields: parse_statement(expr, next_type, types),
       fragment: true,
       parent: type,
@@ -67,7 +66,7 @@ defmodule Goblet.Parser do
 
     %Statement{
       line: line,
-      field: name,
+      field: Atom.to_string(name),
       sub_fields: parse_statement(expr, next_type, types),
       parent: type,
       type: full_type
@@ -79,7 +78,7 @@ defmodule Goblet.Parser do
 
     %Statement{
       line: line,
-      field: name,
+      field: Atom.to_string(name),
       variables: parse_variables(variables, full_type),
       sub_fields: parse_statement(expr, next_type, types),
       parent: type,
@@ -92,7 +91,7 @@ defmodule Goblet.Parser do
 
     %Statement{
       line: line,
-      field: name,
+      field: Atom.to_string(name),
       variables: parse_variables(variables, full_type),
       parent: type,
       type: full_type
@@ -104,7 +103,7 @@ defmodule Goblet.Parser do
 
     %Statement{
       line: line,
-      field: name,
+      field: Atom.to_string(name),
       parent: type,
       type: full_type
     }
@@ -115,7 +114,7 @@ defmodule Goblet.Parser do
 
     %Statement{
       line: line,
-      field: name,
+      field: Atom.to_string(name),
       parent: type,
       type: full_type
     }

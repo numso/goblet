@@ -158,7 +158,7 @@ defmodule Goblet.Validator do
 
   defp get_statement_name(%{attrs: attrs, field: name}) do
     case Enum.find(attrs, fn {key, _, _} -> key == :as end) do
-      nil -> Atom.to_string(name)
+      nil -> name
       {_, _, name} -> name
     end
   end
